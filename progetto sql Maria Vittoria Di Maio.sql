@@ -119,6 +119,23 @@ FROM
 /*uso questa query per unire le due tabelle con cui sto lavorando e calcolare la correlazione tra gdp ed emissioni di co2, gdp e gdp procapite, emissioni e gdp procapite
 La prima risulta molto forte e positiva con un valore di 0.93. La seconda e la terza sono sempre positive ma deboli.*/
 
+/*Creo una classifica dell'efficienza energetica trovando i primi dieci Paesi che nell'ultimo anno per cui abbiamo dati,
+2020, hanno raggiunto crescita del PIL mantenendo bassi i consumi di carbon fossili*/
+SELECT entity,
+     year,
+     gdp_growth, 
+     primary_energy_consumption_per_capita
+FROM sustainability_data
+WHERE gdp_growth>0
+ AND primary_energy_consumption_per_capita< (SELECT AVG(primary_energy_consumption_per_capita) 
+											FROM sustainability_data)
+											AND year>2019
+ORDER BY 
+      gdp_growth DESC,
+	  primary_energy_consumption_per_capita ASC,
+	  entity, 
+	  year;
+
 /*Infine creo un indice di performance ambientale (EPI) e faccio un ranking dei paesi in base a quello*/
 --normalizzo i dati delle due tabelle creando due CTEs
 WITH normalized_data AS (

@@ -119,33 +119,32 @@ FROM
 /*uso questa query per unire le due tabelle con cui sto lavorando e calcolare la correlazione tra gdp ed emissioni di co2, gdp e gdp procapite, emissioni e gdp procapite
 La prima risulta molto forte e positiva con un valore di 0.93. La seconda e la terza sono sempre positive ma deboli.*/
 
-/*Infine creo un indice di performance ambientale e faccio un ranking dei paesi in base a quello*/
+/*Infine creo un indice di performance ambientale (EPI) e faccio un ranking dei paesi in base a quello*/
+--normalizzo i dati delle due tabelle creando due CTEs
 WITH normalized_data AS (
-    -- Normalizzo i dati di sustainability_data
     SELECT
         entity AS country,
-        (CO2_Emissions - MIN(CO2_Emissions) OVER ()) / (MAX(CO2_Emissions) OVER () - MIN(CO2_Emissions) OVER ()) AS normalized_co2_emissions,
-        (access_to_electricity - MIN(access_to_electricity) OVER ()) / (MAX(access_to_electricity) OVER () - MIN(access_to_electricity) OVER ()) AS normalized_access_to_electricity,
-        (access_to_cleanfuels - MIN(access_to_cleanfuels) OVER ()) / (MAX(access_to_cleanfuels) OVER () - MIN(access_to_cleanfuels) OVER ()) AS normalized_access_to_cleanfuels,
-        (percentage_renewables - MIN(percentage_renewables) OVER ()) / (MAX(percentage_renewables) OVER () - MIN(percentage_renewables) OVER ()) AS normalized_percentage_renewables,
-        (density - MIN(density) OVER ()) / (MAX(density) OVER () - MIN(density) OVER ()) AS normalized_density
+        (CO2_Emissions - MIN(CO2_Emissions) OVER ()) / NULLIF((MAX(CO2_Emissions) OVER () - MIN(CO2_Emissions) OVER ()), 0) AS normalized_co2_emissions,
+        (access_to_electricity - MIN(access_to_electricity) OVER ()) / NULLIF((MAX(access_to_electricity) OVER () - MIN(access_to_electricity) OVER ()), 0) AS normalized_access_to_electricity,
+        (access_to_cleanfuels - MIN(access_to_cleanfuels) OVER ()) / NULLIF((MAX(access_to_cleanfuels) OVER () - MIN(access_to_cleanfuels) OVER ()), 0) AS normalized_access_to_cleanfuels,
+        (percentage_renewables - MIN(percentage_renewables) OVER ()) / NULLIF((MAX(percentage_renewables) OVER () - MIN(percentage_renewables) OVER ()), 0) AS normalized_percentage_renewables,
+        (density - MIN(density) OVER ()) / NULLIF((MAX(density) OVER () - MIN(density) OVER ()), 0) AS normalized_density
     FROM
         sustainability_data
 ),
 world_data_normalized AS (
-    -- Normalizzo i dati di world_data
     SELECT
         country,
-        (GDP - MIN(GDP) OVER ()) / (MAX(GDP) OVER () - MIN(GDP) OVER ()) AS normalized_gdp,
-        (agricultural_land - MIN(agricultural_land) OVER ()) / (MAX(agricultural_land) OVER () - MIN(agricultural_land) OVER ()) AS normalized_agricultural_land,
-        (land_area - MIN(land_area) OVER ()) / (MAX(land_area) OVER () - MIN(land_area) OVER ()) AS normalized_land_area,
-        (population - MIN(population) OVER ()) / (MAX(population) OVER () - MIN(population) OVER ()) AS normalized_population,
-        (gasoline_price - MIN(gasoline_price) OVER ()) / (MAX(gasoline_price) OVER () - MIN(gasoline_price) OVER ()) AS normalized_gasoline_price
+        (GDP - MIN(GDP) OVER ()) / NULLIF((MAX(GDP) OVER () - MIN(GDP) OVER ()), 0) AS normalized_gdp,
+        (agricultural_land - MIN(agricultural_land) OVER ()) / NULLIF((MAX(agricultural_land) OVER () - MIN(agricultural_land) OVER ()), 0) AS normalized_agricultural_land,
+        (land_area - MIN(land_area) OVER ()) / NULLIF((MAX(land_area) OVER () - MIN(land_area) OVER ()), 0) AS normalized_land_area,
+        (population - MIN(population) OVER ()) / NULLIF((MAX(population) OVER () - MIN(population) OVER ()), 0) AS normalized_population,
+        (gasoline_price - MIN(gasoline_price) OVER ()) / NULLIF((MAX(gasoline_price) OVER () - MIN(gasoline_price) OVER ()), 0) AS normalized_gasoline_price
     FROM
         world_data
 ),
+--e sempre con una CTE assegno dei pesi specifici alle variabili escludendo i valori nulli
 weighted_scores AS (
-    -- calcolo dei pesi, abbastanza arbitrari, per ognuna delle variabili
     SELECT
         nd.country,
         (0.2 * nd.normalized_co2_emissions) AS co2_score,
@@ -162,13 +161,25 @@ weighted_scores AS (
         normalized_data nd
     JOIN
         world_data_normalized wdn ON nd.country = wdn.country
+    WHERE
+        normalized_co2_emissions IS NOT NULL
+        AND normalized_access_to_electricity IS NOT NULL
+        AND normalized_access_to_cleanfuels IS NOT NULL
+        AND normalized_percentage_renewables IS NOT NULL
+        AND normalized_density IS NOT NULL
+        AND normalized_GDP IS NOT NULL
+        AND normalized_agricultural_land IS NOT NULL
+        AND normalized_land_area IS NOT NULL
+        AND normalized_population IS NOT NULL
+        AND normalized_gasoline_price IS NOT NULL
 )
--- Calcolo lo score EPI finale (environmental performance index)
+-- colcolo gli epi score generali
 SELECT
     country,
-    (co2_score + access_to_electricity_score + access_to_cleanfuels_score + percentage_renewables_score + density_score +
-     gdp_score + agricultural_land_score + land_area_score + population_score + gasoline_price_score) AS epi_score
+    MAX((co2_score + access_to_electricity_score + access_to_cleanfuels_score + percentage_renewables_score + density_score +
+     gdp_score + agricultural_land_score + land_area_score + population_score + gasoline_price_score)) AS epi_score
 FROM
     weighted_scores
+GROUP BY weighted_scores.country
 ORDER BY
     epi_score DESC;

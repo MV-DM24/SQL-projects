@@ -65,3 +65,37 @@ SELECT
     PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY Life_Expectancy) as median_life_expectancy, --73.2
     PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY Life_Expectancy) as q3_life_expectancy --77.5
 FROM world_data;
+SELECT country FROM world_data WHERE Life_Expectancy IS NOT NULL ORDER BY life_expectancy DESC LIMIT 5; --trovo i 5 Paesi con l'aspettativa di vita più alta
+
+SELECT CORR(GDP, Gross_Primary_Education_Enrollment) AS correlation_coefficient FROM world_data; --0,00 la correlazione tra queste due variabili è pressoché inesistente
+SELECT CORR(GDP, Gross_Tertiary_Education_Enrollment) as correlation_coefficient from world_data; --0.21
+
+/*comincio ad unire le 2 tabelle world_data e sustainability_data per un'analisi dei dati sulla sostenibilità*/
+
+WITH average_renewable_use AS (
+    SELECT 
+        entity,
+        year,
+        AVG(gdp_percapita) AS avg_gdp_percapita,
+        AVG(renewable_energy_share_in_consumption) AS avg_renewable_energy_share
+    FROM 
+        sustainability_data
+    GROUP BY 
+        entity, 
+        year
+)
+SELECT 
+    corr(avg_gdp_percapita, avg_renewable_energy_share) AS correlation_coefficient
+FROM (
+    SELECT 
+        wd.country,
+        aru.year,
+        aru.avg_renewable_energy_share,
+        aru.avg_gdp_percapita
+    FROM 
+        world_data wd
+    LEFT JOIN 
+        average_renewable_use aru ON wd.country = aru.entity
+) AS combined_data;
+/*questa query mi permette di analizzare il rapporto tra percentuale di energia rinnovabile consumata nel tempo e gdp dei paesi
+-0.34*/

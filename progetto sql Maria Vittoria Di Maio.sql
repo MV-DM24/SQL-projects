@@ -97,5 +97,78 @@ FROM (
     LEFT JOIN 
         average_renewable_use aru ON wd.country = aru.entity
 ) AS combined_data;
-/*questa query mi permette di analizzare il rapporto tra percentuale di energia rinnovabile consumata nel tempo e gdp dei paesi
--0.34*/
+/*questa query mi permette di analizzare il rapporto tra percentuale di energia rinnovabile consumata nel tempo e gdp procapite dei paesi
+-0.34, questo significa che all'aumentare del gdp procapite la percentuale di energia rinnovabile consumata diminuisce, anche se la correlazione è debole*/
+
+WITH world_sustainability AS (
+    SELECT wd.country,
+           wd.GDP,
+           sd.year,
+           sd.CO2_Emissions,
+           sd.gdp_percapita
+    FROM world_data wd
+    LEFT JOIN sustainability_data sd ON wd.country = sd.entity 
+)
+SELECT 
+    CORR(GDP, CO2_Emissions) AS correlation_gdp_co2,
+    CORR(GDP, gdp_percapita) AS correlation_gdp_gdp_percapita,
+    CORR(CO2_Emissions, gdp_percapita) AS correlation_co2_gdp_percapita
+FROM 
+    world_sustainability;
+
+/*uso questa query per unire le due tabelle con cui sto lavorando e calcolare la correlazione tra gdp ed emissioni di co2, gdp e gdp procapite, emissioni e gdp procapite
+La prima risulta molto forte e positiva con un valore di 0.93. La seconda e la terza sono sempre positive ma deboli.*/
+
+/*Infine creo un indice di performance ambientale e faccio un ranking dei paesi in base a quello*/
+WITH normalized_data AS (
+    -- Normalizzo i dati di sustainability_data
+    SELECT
+        entity AS country,
+        (CO2_Emissions - MIN(CO2_Emissions) OVER ()) / (MAX(CO2_Emissions) OVER () - MIN(CO2_Emissions) OVER ()) AS normalized_co2_emissions,
+        (access_to_electricity - MIN(access_to_electricity) OVER ()) / (MAX(access_to_electricity) OVER () - MIN(access_to_electricity) OVER ()) AS normalized_access_to_electricity,
+        (access_to_cleanfuels - MIN(access_to_cleanfuels) OVER ()) / (MAX(access_to_cleanfuels) OVER () - MIN(access_to_cleanfuels) OVER ()) AS normalized_access_to_cleanfuels,
+        (percentage_renewables - MIN(percentage_renewables) OVER ()) / (MAX(percentage_renewables) OVER () - MIN(percentage_renewables) OVER ()) AS normalized_percentage_renewables,
+        (density - MIN(density) OVER ()) / (MAX(density) OVER () - MIN(density) OVER ()) AS normalized_density
+    FROM
+        sustainability_data
+),
+world_data_normalized AS (
+    -- Normalizzo i dati di world_data
+    SELECT
+        country,
+        (GDP - MIN(GDP) OVER ()) / (MAX(GDP) OVER () - MIN(GDP) OVER ()) AS normalized_gdp,
+        (agricultural_land - MIN(agricultural_land) OVER ()) / (MAX(agricultural_land) OVER () - MIN(agricultural_land) OVER ()) AS normalized_agricultural_land,
+        (land_area - MIN(land_area) OVER ()) / (MAX(land_area) OVER () - MIN(land_area) OVER ()) AS normalized_land_area,
+        (population - MIN(population) OVER ()) / (MAX(population) OVER () - MIN(population) OVER ()) AS normalized_population,
+        (gasoline_price - MIN(gasoline_price) OVER ()) / (MAX(gasoline_price) OVER () - MIN(gasoline_price) OVER ()) AS normalized_gasoline_price
+    FROM
+        world_data
+),
+weighted_scores AS (
+    -- calcolo dei pesi, abbastanza arbitrari, per ognuna delle variabili
+    SELECT
+        nd.country,
+        (0.2 * nd.normalized_co2_emissions) AS co2_score,
+        (0.1 * nd.normalized_access_to_electricity) AS access_to_electricity_score,
+        (0.1 * nd.normalized_access_to_cleanfuels) AS access_to_cleanfuels_score,
+        (0.1 * nd.normalized_percentage_renewables) AS percentage_renewables_score,
+        (0.05 * nd.normalized_density) AS density_score,
+        (0.1 * wdn.normalized_gdp) AS gdp_score,
+        (0.1 * wdn.normalized_agricultural_land) AS agricultural_land_score,
+        (0.05 * wdn.normalized_land_area) AS land_area_score,
+        (0.1 * wdn.normalized_population) AS population_score,
+        (0.1 * wdn.normalized_gasoline_price) AS gasoline_price_score
+    FROM
+        normalized_data nd
+    JOIN
+        world_data_normalized wdn ON nd.country = wdn.country
+)
+-- Calcolo lo score EPI finale (environmental performance index)
+SELECT
+    country,
+    (co2_score + access_to_electricity_score + access_to_cleanfuels_score + percentage_renewables_score + density_score +
+     gdp_score + agricultural_land_score + land_area_score + population_score + gasoline_price_score) AS epi_score
+FROM
+    weighted_scores
+ORDER BY
+    epi_score DESC;
